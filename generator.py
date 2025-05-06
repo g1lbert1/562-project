@@ -9,9 +9,13 @@ def main():
     """
 
     body = """
+    count = 0
     for row in cur:
-        if row['quant'] > 10:
+        if count >= 6:
+            continue
+        if row['cust'] == 'Dan':
             _global.append(row)
+            count +=1
     """
 
     # Note: The f allows formatting with variables.
@@ -53,7 +57,7 @@ if "__main__" == __name__:
     # Write the generated code to a file
     open("_generated.py", "w").write(tmp)
     # Execute the generated code
-    subprocess.run(["python", "_generated.py"])
+    subprocess.run(["python3", "_generated.py"])
 
 
 if "__main__" == __name__:

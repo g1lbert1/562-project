@@ -21,9 +21,13 @@ def query():
     
     _global = []
     
+    count = 0
     for row in cur:
-        if row['quant'] > 10:
+        if count >= 6:
+            continue
+        if row['cust'] == 'Dan':
             _global.append(row)
+            count +=1
     
     
     return tabulate.tabulate(_global,

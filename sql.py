@@ -18,7 +18,7 @@ def query():
     conn = psycopg2.connect("dbname="+dbname+" user="+user+" password="+password,
                             cursor_factory=psycopg2.extras.DictCursor)
     cur = conn.cursor()
-    cur.execute("SELECT * FROM sales WHERE quant > 10")
+    cur.execute('SELECT * FROM sales WHERE cust = \'Dan\' LIMIT 5')
 
     return tabulate.tabulate(cur.fetchall(),
                              headers="keys", tablefmt="psql")
