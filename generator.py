@@ -1,7 +1,77 @@
 import subprocess
+import sys
+
+
+
+
+
+#Function to parse input via user
+def parse_user_input():
+    MF_STRUCT = {'S': [], 'N': None, 'V': [], 'F': [], 'Sigma': [], 'G': None}
+    MF_STRUCT['S'].append(input("SELECT ATTRIBUTE(S): "))
+    MF_STRUCT['N'] = input("NUMBER OF GROUPING VARIABLES(n): ")
+    MF_STRUCT['V'].append(input("GROUPING ATTRIBUTES(V): "))
+    MF_STRUCT['F'].append(input("F-VECT([F]): "))
+    MF_STRUCT['Sigma'].append(input("SELECT CONDITION-VECT([σ]): "))
+    MF_STRUCT['G'] = input("HAVING_CONDITION(G): ")
+    for key in MF_STRUCT:
+        #split by comma for the lists inside S, V, F, Sigma
+        if key in {"S", "V", "F", "Sigma"}:
+            if isinstance(MF_STRUCT[key], list) and len(MF_STRUCT[key]) == 1:
+                MF_STRUCT[key] = [item.strip() for item in MF_STRUCT[key][0].split(",")]
+    return MF_STRUCT
+
+#Function to parse input via file
+def parse_file_input(filename):
+    with open(filename, 'r') as f:
+        #read only non-empty lines
+        lines = [line.strip() for line in f if line.strip()]
+    MF_STRUCT = {}
+    #current key keeps track of the current phi operator argument(S, n, etc)
+    current_key = None
+    #expected headers of input file
+    skip_headers = [
+        "SELECT ATTRIBUTE(S):",
+        "NUMBER OF GROUPING VARIABLES(n):",
+        "GROUPING ATTRIBUTES(V):",
+        "F-VECT([F]):",
+        "SELECT CONDITION-VECT([σ]):",
+        "HAVING_CONDITION(G):"
+    ]
+    #transformed header -> key for MF_STRUCT
+    header_to_key = {
+        "SELECT ATTRIBUTE(S):": "S",
+        "NUMBER OF GROUPING VARIABLES(n):": "N",
+        "GROUPING ATTRIBUTES(V):": "V",
+        "F-VECT([F]):": "F",
+        "SELECT CONDITION-VECT([σ]):": "Sigma",
+        "HAVING_CONDITION(G):": "G"
+    }
+
+    for line in lines:
+    #parse through the section headers (ie: 'SELECT ATTRIBUTE(S):')
+        if any(line.startswith(header) for header in skip_headers):
+            for header in skip_headers:
+                if line.startswith(header):
+                    current_key = header_to_key[header]
+                    MF_STRUCT[current_key] = []
+                    break
+        elif current_key:
+            MF_STRUCT[current_key].append(line)
+    for key in MF_STRUCT:
+        #The N and G arguments should not be lists
+        if key == "N" or key == 'G':
+            MF_STRUCT[key] = MF_STRUCT[key][0]
+        #split by comma for the lists inside S, V, F, Sigma
+        if key in {"S", "V", "F", "Sigma"}:
+            if isinstance(MF_STRUCT[key], list) and len(MF_STRUCT[key]) == 1:
+                MF_STRUCT[key] = [item.strip() for item in MF_STRUCT[key][0].split(",")]
+    return MF_STRUCT
+
 
 
 def main():
+
     """
     This is the generator code. It should take in the MF structure and generate the code
     needed to run the query. That generated code should be saved to a 
@@ -61,4 +131,18 @@ if "__main__" == __name__:
 
 
 if "__main__" == __name__:
+    if len(sys.argv) == 2:
+        #code for file input
+        filename = sys.argv[1]
+        print(f"reading input from file: {filename}")
+        MF = parse_file_input(filename)
+    elif len(sys.argv) == 1:
+        #code for user input
+        MF = parse_user_input()
+        print("reading input from USER")
+    else:
+        print("Invalid Arguments. Only accepted arguments: no argument at all or <filename>")
+    for key, value in MF.items():
+        print(f"{key}: {value}")
+
     main()
