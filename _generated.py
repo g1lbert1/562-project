@@ -20,15 +20,78 @@ def query():
     cur.execute("SELECT * FROM sales")
     
     _global = []
-    
-    count = 0
+    H = []
+    def lookup(row):
+        for h in H:
+            if h['cust'] != row['cust']:
+                continue
+            return h
+        return None
+    def add(row):
+        entry = {}
+        entry['cust'] = row['cust']
+        entry['1_sum_quant'] = 0
+        entry['1_avg_quant'] = 0.0
+        entry['1_avg_quant_count'] = 0
+        entry['2_sum_quant'] = 0
+        entry['3_sum_quant'] = 0
+        entry['3_avg_quant'] = 0.0
+        entry['3_avg_quant_count'] = 0
+        H.append(entry)
+
+    cur.scroll(0, mode='absolute')
     for row in cur:
-        if count >= 6:
-            continue
-        if row['cust'] == 'Dan':
-            _global.append(row)
-            count +=1
-    
+        h = lookup(row)
+        if not h:
+            add(row)
+            h = lookup(row)
+    cur.scroll(0, mode='absolute')
+    for row in cur:
+        if not (row['state'] == 'NY'): continue
+        h = lookup(row)
+        if not h:
+            add(row)
+            h = lookup(row)
+        if 'quant' in row:
+            h['1_sum_quant'] += row['quant']
+        if 'quant' in row:
+            h['1_avg_quant'] += row['quant']
+            h['1_avg_quant_count'] += 1
+    cur.scroll(0, mode='absolute')
+    for row in cur:
+        if not (row['state'] == 'NJ'): continue
+        h = lookup(row)
+        if not h:
+            add(row)
+            h = lookup(row)
+        if 'quant' in row:
+            h['2_sum_quant'] += row['quant']
+    cur.scroll(0, mode='absolute')
+    for row in cur:
+        if not (row['state'] == 'CT'): continue
+        h = lookup(row)
+        if not h:
+            add(row)
+            h = lookup(row)
+        if 'quant' in row:
+            h['3_sum_quant'] += row['quant']
+        if 'quant' in row:
+            h['3_avg_quant'] += row['quant']
+            h['3_avg_quant_count'] += 1
+    for h in H:
+        h['1_avg_quant'] = h['1_avg_quant'] / h['1_avg_quant_count'] if h['1_avg_quant_count'] else None
+    for h in H:
+        h['3_avg_quant'] = h['3_avg_quant'] / h['3_avg_quant_count'] if h['3_avg_quant_count'] else None
+    _global = []
+    for h in H:
+        if not (h['1_sum_quant'] > 2 * h['2_sum_quant'] or h['1_avg_quant'] > h['3_avg_quant']): continue
+        result = {
+            'cust': h['cust'],
+            '1_sum_quant': h['1_sum_quant'],
+            '2_sum_quant': h['2_sum_quant'],
+            '3_sum_quant': h['3_sum_quant'],
+        }
+        _global.append(result)
     
     return tabulate.tabulate(_global,
                         headers="keys", tablefmt="psql")

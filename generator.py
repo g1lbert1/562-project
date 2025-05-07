@@ -1,5 +1,113 @@
 import subprocess
 import sys
+import textwrap
+
+#function to alter file input / user input in order to run the algorithm
+def normalize_condition(cond, source='row'):
+    import re
+
+    # Replace fancy quotes with standard
+    cond = cond.replace("’", "'").replace("“", "\"").replace("”", "\"")
+
+    # Replace grouping variable prefix (e.g., 1.state) with row['state']
+    cond = re.sub(r"(\d+)\.([a-zA-Z_][\w]*)", fr"{source}['\2']", cond)
+
+    # Replace bare aggregate names (like 1_sum_quant) with h['1_sum_quant']
+    cond = re.sub(r"\b(\d+_[a-zA-Z_]\w*)\b", r"h['\1']", cond)
+
+    # Replace single = with ==
+    cond = re.sub(r"(?<=[^<>=!])=(?=[^=])", "==", cond)
+
+    return cond
+
+
+#function to generate body (algorithm for MF_STRUCT)
+def generate_body(MF):
+    lines = []
+    lines.append("H = []")
+    lines.append("def lookup(row):")
+    lines.append("    for h in H:")
+    for attr in MF["V"]:
+        lines.append(f"        if h['{attr}'] != row['{attr}']:")
+        lines.append("            continue")
+    lines.append("        return h")
+    lines.append("    return None")
+
+    lines.append("def add(row):")
+    lines.append("    entry = {}")
+    for attr in MF["V"]:
+        lines.append(f"    entry['{attr}'] = row['{attr}']")
+    for f in MF["F"]:
+        if "avg" in f:
+            lines.append(f"    entry['{f}'] = 0.0")
+            lines.append(f"    entry['{f}_count'] = 0")
+        else:
+            lines.append(f"    entry['{f}'] = 0")
+    lines.append("    H.append(entry)\n")
+
+    #scanning 0 to N
+    for i in range(int(MF['N']) + 1):
+        #starting at the top of the table
+        lines.append("cur.scroll(0, mode='absolute')")
+        lines.append("for row in cur:")
+        if i > 0:
+            #1-indexed
+            condition = normalize_condition(MF['Sigma'][i-1])
+            lines.append(f"    if not ({condition}): continue")
+        lines.append("    h = lookup(row)")
+        lines.append("    if not h:")
+        lines.append("        add(row)")
+        lines.append("        h = lookup(row)")
+        for f in MF["F"]:
+            if f.startswith(f"{i}_"):
+                # agg_type, col = f.split("_", 1)[1:]  # e.g. 'sum', 'quant'
+
+
+                parts = f.split("_", 2)  # Try splitting into 3 parts: [i, agg, col]
+                if len(parts) < 3:
+                    print(f"Skipping malformed aggregate field: {f}")
+                    continue
+                _, agg_type, col = parts
+                col = col.strip()
+
+                if "sum" in f or "count" in f:
+                    lines.append(f"    if '{col}' in row:")
+                    lines.append(f"        h['{f}'] += row['{col}']")
+
+                    if "avg" in f:
+                        lines.append(f"        h['{f}_count'] += 1")
+
+                elif "avg" in f:
+                    lines.append(f"    if '{col}' in row:")
+                    lines.append(f"        h['{f}'] += row['{col}']")
+                    lines.append(f"        h['{f}_count'] += 1")
+                    
+                elif "max" in f:
+                    lines.append(f"    if '{col}' in row:")
+                    lines.append(f"        h['{f}'] = max(h['{f}'], row['{col}'])")
+                    
+                elif "min" in f:
+                    lines.append(f"    if '{col}' in row:")
+                    lines.append(f"        h['{f}'] = min(h['{f}'], row['{col}'])")
+                    
+    #avg calculation
+    for f in MF["F"]:
+        if "avg" in f:
+            lines.append(f"for h in H:")
+            lines.append(f"    h['{f}'] = h['{f}'] / h['{f}_count'] if h['{f}_count'] else None")
+
+    #having condition
+    lines.append("_global = []")
+    lines.append("for h in H:")
+    if MF["G"]:
+        lines.append(f"    if not ({normalize_condition(MF['G'])}): continue")
+    lines.append("    result = {")
+    for s in MF["S"]:
+        lines.append(f"        '{s}': h['{s}'],")
+    lines.append("    }")
+    lines.append("    _global.append(result)")
+
+    return "\n".join(lines)
 
 
 
@@ -71,6 +179,7 @@ def parse_file_input(filename):
 
 
 def main():
+    from textwrap import indent
 
     """
     This is the generator code. It should take in the MF structure and generate the code
@@ -78,15 +187,9 @@ def main():
     file (e.g. _generated.py) and then run.
     """
 
-    body = """
-    count = 0
-    for row in cur:
-        if count >= 6:
-            continue
-        if row['cust'] == 'Dan':
-            _global.append(row)
-            count +=1
-    """
+
+    body = generate_body(MF)
+    indented_body = indent(body, "    ")
 
     # Note: The f allows formatting with variables.
     #       Also, note the indentation is preserved.
@@ -112,7 +215,7 @@ def query():
     cur.execute("SELECT * FROM sales")
     
     _global = []
-    {body}
+{indented_body}
     
     return tabulate.tabulate(_global,
                         headers="keys", tablefmt="psql")
@@ -134,12 +237,12 @@ if "__main__" == __name__:
     if len(sys.argv) == 2:
         #code for file input
         filename = sys.argv[1]
-        print(f"reading input from file: {filename}")
+        # print(f"reading input from file: {filename}")
         MF = parse_file_input(filename)
     elif len(sys.argv) == 1:
         #code for user input
         MF = parse_user_input()
-        print("reading input from USER")
+        # print("reading input from USER")
     else:
         print("Invalid Arguments. Only accepted arguments: no argument at all or <filename>")
     for key, value in MF.items():
